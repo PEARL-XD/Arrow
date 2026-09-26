@@ -1,0 +1,6 @@
+# Copy to key.properties and supply your own private upload keystore.
+# Never commit the real file or the keystore.
+storeFile=C:/private/path-out-upload.jks
+storePassword=REPLACE_LOCALLY
+keyPassword=REPLACE_LOCALLY
+keyAlias=upload
