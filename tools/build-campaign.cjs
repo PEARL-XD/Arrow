@@ -77,7 +77,9 @@ levels.forEach(({level,m},i)=>{
   report.push({level:i+1,name:level.name,shape:level.shape,difficulty:level.difficulty,
     ...m,solution:undefined,challenge:Number(challenge(m).toFixed(2))});
 });
-fs.writeFileSync(path.join(__dirname,'../assets/levels.json'),JSON.stringify(levels.map(x=>x.level)));
+const boss = require('./boss-board.json');
+E.validateLevel(boss);
+fs.writeFileSync(path.join(__dirname,'../assets/levels.json'),JSON.stringify([...levels.map(x=>x.level),boss]));
 fs.mkdirSync(path.join(__dirname,'../docs'),{recursive:true});
 fs.writeFileSync(path.join(__dirname,'../docs/level-metrics.json'),JSON.stringify(report,null,2));
 console.table(report.map(({level,name,cells,arrows,depth,turns,challenge})=>({level,name,cells,arrows,depth,turns,challenge})));

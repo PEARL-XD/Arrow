@@ -1,0 +1,18 @@
+{
+  "cells": 839,
+  "arrows": 80,
+  "coverage": 1,
+  "available": 10,
+  "depth": 24,
+  "minLength": 2,
+  "maxLength": 43,
+  "turns": 581,
+  "straight": 24,
+  "directions": [
+    21,
+    31,
+    14,
+    14
+  ],
+  "singles": 0
+}

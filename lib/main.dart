@@ -5,6 +5,7 @@ import 'game_controller.dart';
 import 'game_screen.dart';
 import 'puzzle.dart';
 import 'storage.dart';
+import 'admin_testing.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,10 +13,23 @@ Future<void> main() async {
     final levels = Puzzle.decode(
       await rootBundle.loadString('assets/levels.json'),
     );
-    final game = GameController(levels);
+    final legacy = Puzzle.decode(
+      await rootBundle.loadString('assets/legacy-chapter-one.json'),
+    );
+    final game = GameController(
+      levels,
+      legacyLevels: legacy,
+      adminTesting: adminTestingEnabled,
+    );
     ProgressStore? store;
     try {
-      store = ProgressStore(await SharedPreferences.getInstance());
+      final preferences = await SharedPreferences.getInstance();
+      store = ProgressStore(
+        preferences,
+        saveKey: game.adminTesting ? ProgressStore.adminKey : ProgressStore.key,
+      );
+      // New testing save begins with Mira only, so chapter purchases can be tested.
+      // Earlier test and normal player saves are preserved under their own keys.
       store.restore(game);
       final progress = store;
       game.addListener(() {
@@ -24,8 +38,14 @@ Future<void> main() async {
     } catch (_) {
       /* Gameplay stays available if device storage is unavailable. */
     }
+    game.refillTestCoins();
     runApp(
-      PathOutApp(game: game, store: store, storageUnavailable: store == null),
+      PathOutApp(
+        game: game,
+        store: store,
+        storageUnavailable: store == null,
+        initializeAds: true,
+      ),
     );
   } catch (_) {
     runApp(
@@ -35,7 +55,7 @@ Future<void> main() async {
             child: Padding(
               padding: EdgeInsets.all(32),
               child: Text(
-                'The puzzle pack could not be loaded. Please close and reopen Path Out.',
+                'The puzzle pack could not be loaded. Please close and reopen ARROW: THE LAST LANTERN.',
               ),
             ),
           ),
@@ -51,13 +71,15 @@ class PathOutApp extends StatelessWidget {
     required this.game,
     this.store,
     this.storageUnavailable = false,
+    this.initializeAds = false,
   });
   final GameController game;
   final ProgressStore? store;
   final bool storageUnavailable;
+  final bool initializeAds;
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'Path Out',
+    title: 'ARROW: THE LAST LANTERN',
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       useMaterial3: true,
@@ -100,6 +122,7 @@ class PathOutApp extends StatelessWidget {
       game: game,
       store: store,
       storageUnavailable: storageUnavailable,
+      initializeAds: initializeAds,
     ),
   );
 }

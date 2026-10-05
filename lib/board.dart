@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'arrow_geometry.dart';
 import 'game_controller.dart';
+import 'theme_art.dart';
+import 'arrow_art.dart';
 
 class MazePainter extends CustomPainter {
   MazePainter({
@@ -11,11 +13,13 @@ class MazePainter extends CustomPainter {
     required this.onArrow,
     this.highlight,
     this.blocked,
+    this.reducedMotion = false,
   }) : super(repaint: animation);
   final GameController game;
   final Animation<double> animation;
   final double travel;
   final int? highlight, blocked;
+  final bool reducedMotion;
   final ValueChanged<int> onArrow;
   static const ink = Color(0xFF24334D);
   @override
@@ -23,8 +27,10 @@ class MazePainter extends CustomPainter {
     final bounds = boardSize(game.puzzle);
     canvas.save();
     canvas.clipRect(Offset.zero & size);
+    paintThemeSurface(canvas, size, game.inventory.theme);
     canvas.scale(size.width / bounds.width, size.height / bounds.height);
-    final dot = Paint()..color = const Color(0xFFDDE3EB);
+    final theme = game.inventory.theme;
+    final dot = Paint()..color = theme.dots;
     for (final cell in game.puzzle.mask) {
       canvas.drawCircle(cellPoint(cell), .038, dot);
     }
@@ -32,31 +38,19 @@ class MazePainter extends CustomPainter {
       if (game.removed.contains(arrow.id)) continue;
       final moving = game.movingId == arrow.id;
       final points = movingPoints(arrow, moving ? animation.value * travel : 0);
-      final color = arrow.id == blocked
-          ? const Color(0xFFDC5960)
-          : moving || arrow.id == highlight
-          ? const Color(0xFF506BDF)
-          : ink;
-      final pen = Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = .14
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round;
-      final path = Path()..moveTo(points.first.dx, points.first.dy);
-      for (final p in points.skip(1)) {
-        path.lineTo(p.dx, p.dy);
-      }
-      canvas.drawPath(path, pen);
-      final head = points.last, d = arrow.delta;
-      final a = head - Offset(d.x * .32 + d.y * .19, d.y * .32 - d.x * .19);
-      final b = head - Offset(d.x * .32 - d.y * .19, d.y * .32 + d.x * .19);
-      canvas.drawPath(
-        Path()
-          ..moveTo(a.dx, a.dy)
-          ..lineTo(head.dx, head.dy)
-          ..lineTo(b.dx, b.dy),
-        pen,
+      paintSkinnedArrow(
+        canvas,
+        points: points,
+        direction: Offset(arrow.delta.x.toDouble(), arrow.delta.y.toDouble()),
+        skin: game.inventory.arrow,
+        variant: arrow.id,
+        theme: theme,
+        bounds: Offset.zero & bounds,
+        moving: moving,
+        progress: animation.value,
+        highlighted: arrow.id == highlight,
+        blocked: arrow.id == blocked,
+        reducedMotion: reducedMotion,
       );
     }
     canvas.restore();

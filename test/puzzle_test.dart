@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_out/puzzle.dart';
@@ -9,18 +10,64 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   final levels = Puzzle.decode(File('assets/levels.json').readAsStringSync());
-  test('40 distinct boards; first 20 percent are beginner puzzles', () {
-    expect(levels.length, 40);
-    expect(levels.map((p) => p.name).toSet().length, 40);
+  test('60 story boards plus the bonus boss; gentle opening puzzles', () {
+    expect(levels.length, 61);
+    expect(levels.map((p) => p.name).toSet().length, 61);
+    expect(levels.where((p) => p.isBoss).length, 5);
+    expect(levels.last.isBoss, isTrue);
     expect(levels.take(8).every((p) => p.difficulty == 'Beginner'), isTrue);
     expect(levels.take(5).every((p) => p.arrows.length <= 25), isTrue);
   });
+  test(
+    'Archived campaign calibration and approved geometry remain recoverable',
+    () {
+      final metrics =
+          jsonDecode(File('docs/level-metrics.json').readAsStringSync())
+              as List;
+      for (var i = 1; i < metrics.length; i++) {
+        expect(
+          metrics[i]['challenge'] as num,
+          greaterThan(metrics[i - 1]['challenge'] as num),
+        );
+      }
+      final originals = Puzzle.decode(
+        File('tools/approved-boards.json').readAsStringSync(),
+      );
+      for (final original in originals) {
+        final current = [
+          ...levels,
+          ...Puzzle.decode(
+            File('assets/legacy-campaign-v08.json').readAsStringSync(),
+          ),
+          ...Puzzle.decode(
+            File('assets/legacy-chapter-one.json').readAsStringSync(),
+          ),
+        ].firstWhere((p) => p.name == original.name);
+        expect(current.mask, original.mask);
+        expect(current.arrows.length, original.arrows.length);
+        for (var i = 0; i < current.arrows.length; i++) {
+          expect(current.arrows[i].cells, original.arrows[i].cells);
+          expect(current.arrows[i].direction, original.arrows[i].direction);
+        }
+      }
+    },
+  );
   for (var i = 0; i < levels.length; i++) {
     final puzzle = levels[i];
     test('Level ${i + 1}: full coverage, no overlaps, heads aligned, solvable', () {
       puzzle.validate();
       expect(puzzle.arrows.map((a) => a.direction).toSet().length, 4);
-      final game = GameController(levels)..reset(i);
+      // Test this board in isolation; the two-stage controller has separate tests.
+      final game = GameController([
+        Puzzle(
+          name: puzzle.name,
+          difficulty: puzzle.difficulty,
+          width: puzzle.width,
+          height: puzzle.height,
+          mask: puzzle.mask,
+          arrows: puzzle.arrows,
+        ),
+      ]);
       final solution = puzzle.solve()!;
       expect(game.removed, isEmpty);
       for (final id in solution) {
@@ -69,7 +116,7 @@ void main() {
         expect(game.finish(id, game.epoch), isTrue);
       }
       expect(game.status, GameStatus.won);
-      expect(game.completed, contains(i));
+      expect(game.completed, contains(0));
       game.dispose();
     });
   }
@@ -113,7 +160,8 @@ void main() {
     expect(game.attempt(id), MoveResult.moving);
     final inFlight = game.snapshot();
     expect(inFlight['removed'], isEmpty);
-    game.skip();
+    expect(game.skip(), isFalse);
+    game.reset();
     expect(game.finish(id, token), isFalse);
     expect(game.remaining, game.puzzle.arrows.length);
     final move = game.puzzle.available({}).first.id;
@@ -123,8 +171,8 @@ void main() {
     expect(restored.snapshot(), game.snapshot());
     restored.restore({'version': 1, 'index': 999});
     expect(restored.snapshot(), game.snapshot());
-    game.reset(levels.length - 1);
-    game.skip();
+    expect(game.reset(levels.length - 1), isFalse);
+    expect(game.skip(), isFalse);
     expect(game.index, 0);
     game.dispose();
     restored.dispose();
@@ -136,6 +184,7 @@ void main() {
       final store = ProgressStore(await SharedPreferences.getInstance());
       final game = GameController(levels);
       final first = store.save(game);
+      game.completed.add(0);
       game.skip();
       await store.save(game);
       await first;

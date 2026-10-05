@@ -1,0 +1,222 @@
+[
+  {
+    "level": 1,
+    "name": "A Little Light",
+    "cells": 53,
+    "arrows": 10,
+    "coverage": 1,
+    "available": 5,
+    "depth": 3,
+    "minLength": 2,
+    "maxLength": 9,
+    "turns": 14,
+    "straight": 3,
+    "directions": [
+      3,
+      2,
+      2,
+      3
+    ],
+    "singles": 0
+  },
+  {
+    "level": 2,
+    "name": "The Village Arch",
+    "cells": 92,
+    "arrows": 15,
+    "coverage": 1,
+    "available": 6,
+    "depth": 4,
+    "minLength": 2,
+    "maxLength": 11,
+    "turns": 35,
+    "straight": 3,
+    "directions": [
+      3,
+      4,
+      5,
+      3
+    ],
+    "singles": 0
+  },
+  {
+    "level": 3,
+    "name": "Grandmother’s Garden",
+    "cells": 88,
+    "arrows": 14,
+    "coverage": 1,
+    "available": 4,
+    "depth": 5,
+    "minLength": 2,
+    "maxLength": 13,
+    "turns": 29,
+    "straight": 2,
+    "directions": [
+      4,
+      4,
+      2,
+      4
+    ],
+    "singles": 0
+  },
+  {
+    "level": 4,
+    "name": "Silver Wings",
+    "cells": 153,
+    "arrows": 22,
+    "coverage": 1,
+    "available": 2,
+    "depth": 7,
+    "minLength": 2,
+    "maxLength": 15,
+    "turns": 57,
+    "straight": 7,
+    "directions": [
+      6,
+      4,
+      5,
+      7
+    ],
+    "singles": 0
+  },
+  {
+    "level": 5,
+    "name": "The Torn Message",
+    "cells": 109,
+    "arrows": 16,
+    "coverage": 1,
+    "available": 2,
+    "depth": 7,
+    "minLength": 2,
+    "maxLength": 16,
+    "turns": 45,
+    "straight": 5,
+    "directions": [
+      4,
+      3,
+      2,
+      7
+    ],
+    "singles": 0
+  },
+  {
+    "level": 6,
+    "name": "Empty Festival",
+    "cells": 137,
+    "arrows": 18,
+    "coverage": 1,
+    "available": 5,
+    "depth": 7,
+    "minLength": 2,
+    "maxLength": 17,
+    "turns": 64,
+    "straight": 6,
+    "directions": [
+      6,
+      1,
+      6,
+      5
+    ],
+    "singles": 0
+  },
+  {
+    "level": 7,
+    "name": "Flowers in the Dark",
+    "cells": 181,
+    "arrows": 21,
+    "coverage": 1,
+    "available": 5,
+    "depth": 9,
+    "minLength": 2,
+    "maxLength": 20,
+    "turns": 90,
+    "straight": 6,
+    "directions": [
+      3,
+      9,
+      4,
+      5
+    ],
+    "singles": 0
+  },
+  {
+    "level": 8,
+    "name": "A Key of Light",
+    "cells": 149,
+    "arrows": 18,
+    "coverage": 1,
+    "available": 5,
+    "depth": 9,
+    "minLength": 2,
+    "maxLength": 21,
+    "turns": 72,
+    "straight": 8,
+    "directions": [
+      9,
+      3,
+      3,
+      3
+    ],
+    "singles": 0
+  },
+  {
+    "level": 9,
+    "name": "Locked from Within",
+    "cells": 211,
+    "arrows": 23,
+    "coverage": 1,
+    "available": 3,
+    "depth": 10,
+    "minLength": 2,
+    "maxLength": 24,
+    "turns": 115,
+    "straight": 7,
+    "directions": [
+      5,
+      5,
+      5,
+      8
+    ],
+    "singles": 0
+  },
+  {
+    "level": 10,
+    "name": "The Lantern Keeper",
+    "cells": 285,
+    "arrows": 29,
+    "coverage": 1,
+    "available": 4,
+    "depth": 11,
+    "minLength": 2,
+    "maxLength": 28,
+    "turns": 189,
+    "straight": 4,
+    "directions": [
+      7,
+      5,
+      8,
+      9
+    ],
+    "singles": 0
+  },
+  {
+    "level": 10,
+    "name": "The Heart of the Lantern",
+    "cells": 285,
+    "arrows": 29,
+    "coverage": 1,
+    "available": 1,
+    "depth": 13,
+    "minLength": 2,
+    "maxLength": 30,
+    "turns": 194,
+    "straight": 4,
+    "directions": [
+      8,
+      7,
+      10,
+      4
+    ],
+    "singles": 0
+  }
+]

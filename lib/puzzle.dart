@@ -36,15 +36,23 @@ class Puzzle {
     required this.height,
     required List<Cell> mask,
     required List<ArrowRoute> arrows,
+    this.isBoss = false,
+    this.secondPhase,
   }) : mask = List.unmodifiable(mask),
        arrows = List.unmodifiable(arrows);
   final String name, difficulty;
+  final bool isBoss;
+  final Puzzle? secondPhase;
   final int width, height;
   final List<Cell> mask;
   final List<ArrowRoute> arrows;
   factory Puzzle.fromJson(Map<String, dynamic> data) => Puzzle(
     name: data['name'] as String,
     difficulty: data['difficulty'] as String,
+    isBoss: data['isBoss'] as bool? ?? false,
+    secondPhase: data['secondPhase'] == null
+        ? null
+        : Puzzle.fromJson(data['secondPhase'] as Map<String, dynamic>),
     width: data['width'] as int,
     height: data['height'] as int,
     mask: (data['mask'] as List)
@@ -106,6 +114,7 @@ class Puzzle {
   }
 
   void validate() {
+    secondPhase?.validate();
     final allowed = mask.toSet(), occupied = <Cell>{}, ids = <int>{};
     if (width < 1 ||
         height < 1 ||

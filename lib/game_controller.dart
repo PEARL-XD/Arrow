@@ -1,36 +1,271 @@
 import 'package:flutter/foundation.dart';
 import 'puzzle.dart';
+import 'rewards.dart';
+import 'shop_catalog.dart';
+import 'arrow_skins.dart';
+import 'campaign.dart';
+import 'admin_testing.dart';
+import 'story.dart';
 
 enum GameStatus { playing, won, lost }
 
 enum MoveResult { ignored, blocked, moving }
 
 class GameController extends ChangeNotifier {
-  GameController(this.levels);
+  GameController(
+    this.levels, {
+    int Function()? now,
+    this.legacyLevels = const [],
+    bool adminTesting = false,
+  }) : _now = now,
+       _adminTesting = kDebugMode && adminTesting,
+       rewards = RunRewards(now: now);
+  final bool _adminTesting;
+  bool get adminTesting => _adminTesting;
+  void refillTestCoins() {
+    if (!adminTesting || rewards.coins >= adminTestCoins) return;
+    rewards.coins = adminTestCoins;
+    notifyListeners();
+  }
+
+  final int Function()? _now;
+  RunRewards rewards;
+  ShopInventory inventory = ShopInventory();
   final List<Puzzle> levels;
+  final List<Puzzle> legacyLevels;
+  Puzzle? _legacyPuzzle;
+  int? _legacyLevelIndex;
+  int bossPhase = 0, checkpointSkill = 0;
+  final Set<String> seenScenes = {};
+  final List<String> pendingScenes = [];
+  int clearsTowardHint = 0;
+  bool lastHintEarned = false;
+  static const revivePrice = 200;
+  void markSceneSeen(String id) {
+    seenScenes.add(id);
+    pendingScenes.remove(id);
+    notifyListeners();
+  }
+
   int index = 0, lives = 3, hints = 3, epoch = 0;
   Set<int> removed = {}, completed = {};
   int? movingId;
   bool haptics = true;
+  int companionId = 0;
+  bool companionVisible = true;
   GameStatus get status => removed.length == puzzle.arrows.length
       ? GameStatus.won
       : lives == 0
       ? GameStatus.lost
       : GameStatus.playing;
-  Puzzle get puzzle => levels[index];
+  Puzzle get puzzle =>
+      _legacyPuzzle ??
+      (bossPhase == 1 ? levels[index].secondPhase! : levels[index]);
   bool get busy => movingId != null;
   int get remaining => puzzle.arrows.length - removed.length;
-  void reset([int? level]) {
-    index = (level ?? index).clamp(0, levels.length - 1);
+  int get regularLevelCount =>
+      levels.length > storyLevelCount ? storyLevelCount : levels.length;
+  int get regularCompleted =>
+      completed.where((i) => i < regularLevelCount).length;
+  int companionForLevel(int level) => (level ~/ chapterLength).clamp(0, 3);
+  bool get chapterEnd =>
+      index < storyLevelCount && (index + 1) % chapterLength == 0;
+  bool companionAvailable(int id) =>
+      id >= 0 &&
+      id < companionPrices.length &&
+      (id == 0 || completed.contains(id * chapterLength - 1));
+  int get discoveredLevelCount => adminTesting || frontier >= storyLevelCount
+      ? levels.length
+      : ((frontier ~/ chapterLength + 1) * chapterLength).clamp(
+          0,
+          levels.length,
+        );
+  bool get isBoss => puzzle.isBoss;
+  static int lifeLimitFor(int levelIndex) => levelIndex < chapterLength
+      ? 3
+      : levelIndex < chapterLength * 3
+      ? 2
+      : 1;
+  int get maxLives => lifeLimitFor(index);
+  int get frontier {
+    var next = 0;
+    while (next < levels.length - 1 && completed.contains(next)) {
+      next++;
+    }
+    return next;
+  }
+
+  bool isUnlocked(int level) =>
+      level >= 0 &&
+      level < levels.length &&
+      (adminTesting || level <= frontier) &&
+      inventory.companions.contains(companionForLevel(level));
+  bool get canAdvance => completed.contains(index) && isUnlocked(index + 1);
+  bool reset([int? level]) {
+    final target = level ?? index;
+    // Enforce progression here, not just in the level-picker presentation.
+    if (!isUnlocked(target)) return false;
+    final changingChapter =
+        companionForLevel(index) != companionForLevel(target);
+    index = target;
+    if (changingChapter) companionId = companionForLevel(index);
+    _legacyPuzzle = null;
+    _legacyLevelIndex = null;
+    bossPhase = checkpointSkill = 0;
     removed = {};
-    lives = 3;
-    hints = 3;
+    lives = maxLives;
+    rewards.reset();
+    lastHintEarned = false;
+    pendingScenes.clear();
+    movingId = null;
+    epoch++;
+    notifyListeners();
+    return true;
+  }
+
+  bool skip() => canAdvance ? reset(index + 1) : false;
+
+  /// Debug clear follows the same rewards, checkpoint and story events as play.
+  bool clearForTesting() {
+    if (!adminTesting || status == GameStatus.won) return false;
+    movingId = null;
+    epoch++;
+    lives = maxLives;
+    removed = puzzle.arrows.map((a) => a.id).toSet();
+    _completeBoard();
+    notifyListeners();
+    return true;
+  }
+
+  bool revive({bool rewarded = false}) {
+    if (status != GameStatus.lost ||
+        (!rewarded && rewards.coins < revivePrice)) {
+      return false;
+    }
+    if (!rewarded) rewards.coins -= revivePrice;
+    lives = maxLives;
+    movingId = null;
+    epoch++;
+    notifyListeners();
+    return true;
+  }
+
+  void grantAdCoins() {
+    rewards.coins += 80;
+    notifyListeners();
+  }
+
+  bool grantAdHint() {
+    if (hints >= 999) return false;
+    hints++;
+    notifyListeners();
+    return true;
+  }
+
+  bool grantTestCoinPack(int amount) {
+    if (!adminTesting || (amount != 1500 && amount != 4000)) return false;
+    rewards.coins += amount;
+    notifyListeners();
+    return true;
+  }
+
+  bool retryCheckpoint() {
+    if (bossPhase != 1 || status != GameStatus.lost) return false;
+    removed = {};
+    lives = maxLives;
+    movingId = null;
+    rewards.skill = checkpointSkill;
+    epoch++;
+    notifyListeners();
+    return true;
+  }
+
+  void resumeTiming() {
+    if (status == GameStatus.playing) rewards.resume();
+  }
+
+  void pauseTiming() => rewards.pause();
+  bool buyHint() {
+    if (rewards.coins < 80 || hints >= 999) return false;
+    rewards.coins -= 80;
+    hints++;
+    notifyListeners();
+    return true;
+  }
+
+  void chooseCompanion(int id) {
+    if (!inventory.companions.contains(id)) return;
+    companionId = id;
+    companionVisible = true;
+    notifyListeners();
+  }
+
+  bool buyCompanion(int id) {
+    if (id < 0 ||
+        id >= companionPrices.length ||
+        !companionAvailable(id) ||
+        inventory.companions.contains(id) ||
+        rewards.coins < companionPrices[id]) {
+      return false;
+    }
+    rewards.coins -= companionPrices[id];
+    inventory.companions.add(id);
+    notifyListeners();
+    return true;
+  }
+
+  bool buyTheme(String id) {
+    final matches = puzzleThemes.where((theme) => theme.id == id);
+    if (matches.isEmpty ||
+        inventory.themes.contains(id) ||
+        rewards.coins < matches.first.price) {
+      return false;
+    }
+    rewards.coins -= matches.first.price;
+    inventory.themes.add(id);
+    notifyListeners();
+    return true;
+  }
+
+  bool equipTheme(String id) {
+    if (!inventory.themes.contains(id)) return false;
+    inventory.selectedTheme = id;
+    notifyListeners();
+    return true;
+  }
+
+  bool buyArrowSkin(String id) {
+    final matches = arrowSkins.where((skin) => skin.id == id);
+    if (matches.isEmpty ||
+        id == 'lantern' ||
+        inventory.arrows.contains(id) ||
+        rewards.coins < matches.first.price) {
+      return false;
+    }
+    rewards.coins -= matches.first.price;
+    inventory.arrows.add(id);
+    notifyListeners();
+    return true;
+  }
+
+  bool equipArrowSkin(String id) {
+    if (!inventory.arrows.contains(id)) return false;
+    inventory.selectedArrow = id;
+    notifyListeners();
+    return true;
+  }
+
+  void hideCompanion() {
+    companionVisible = false;
+    notifyListeners();
+  }
+
+  void cancelFlight() {
     movingId = null;
     epoch++;
     notifyListeners();
   }
 
-  void skip() => reset((index + 1) % levels.length);
   void toggleHaptics() {
     haptics = !haptics;
     notifyListeners();
@@ -53,6 +288,7 @@ class GameController extends ChangeNotifier {
     if (candidates.isEmpty) return MoveResult.ignored;
     if (puzzle.blockers(candidates.first, removed).isNotEmpty) {
       lives--;
+      if (lives == 0) rewards.pause();
       notifyListeners();
       return MoveResult.blocked;
     }
@@ -63,50 +299,197 @@ class GameController extends ChangeNotifier {
 
   bool finish(int id, int token) {
     if (token != epoch || movingId != id) return false;
+    final before = puzzle.available(removed).map((a) => a.id).toSet();
     removed.add(id);
+    if (puzzle.available(removed).where((a) => !before.contains(a.id)).length >=
+        2) {
+      rewards.greatMove();
+    }
     movingId = null;
-    if (status == GameStatus.won) completed.add(index);
+    if (status == GameStatus.won) _completeBoard();
     notifyListeners();
     return true;
   }
 
+  void _completeBoard() {
+    if (bossPhase == 0 &&
+        _legacyPuzzle == null &&
+        levels[index].secondPhase != null) {
+      bossPhase = 1;
+      checkpointSkill = rewards.skill;
+      removed = {};
+      lives = maxLives;
+      epoch++;
+      if (!pendingScenes.contains('keeper')) pendingScenes.add('keeper');
+      return;
+    }
+    rewards.complete(index, firstClear: !completed.contains(index));
+    completed.add(index);
+    clearsTowardHint++;
+    lastHintEarned = clearsTowardHint >= 2 && hints < 999;
+    if (clearsTowardHint >= 2) {
+      clearsTowardHint = 0;
+      if (lastHintEarned) hints++;
+    }
+    if (index < storyLevelCount) {
+      for (final scene in chapterScenes[index ~/ chapterLength]) {
+        if (scene.afterStage == index % chapterLength &&
+            !pendingScenes.contains(scene.id)) {
+          pendingScenes.add(scene.id);
+        }
+      }
+    }
+    if (index == chapterLength - 1) inventory.arrows.add('lantern');
+  }
+
   Map<String, dynamic> snapshot() => {
     'version': 1,
+    'adminTesting': adminTesting,
+    'storyVersion': 1,
+    'campaignVersion': campaignVersion,
+    'legacyAttempt': _legacyPuzzle != null,
+    'legacyLevelIndex': _legacyLevelIndex,
+    'bossPhase': bossPhase,
+    'checkpointSkill': checkpointSkill,
+    'seenScenes': seenScenes.toList(),
+    'pendingScenes': pendingScenes.toList(),
+    'clearsTowardHint': clearsTowardHint,
+    'lastHintEarned': lastHintEarned,
     'index': index,
     'lives': lives,
     'hints': hints,
     'removed': removed.toList(),
     'completed': completed.toList(),
     'haptics': haptics,
+    'companionId': companionId,
+    'companionVisible': companionVisible,
+    'rewards': rewards.snapshot(),
+    'shop': inventory.snapshot(),
   };
   void restore(Map<String, dynamic> data) {
     // A mid-flight arrow stays present in the save until its animation ends.
     if (data['version'] != 1) return;
+    if (data['adminTesting'] == true && !adminTesting) return;
     try {
+      if (levels.length > storyLevelCount) data = migrateCampaign(data);
       final newIndex = data['index'] as int;
       final newLives = data['lives'] as int, newHints = data['hints'] as int;
       final newHaptics = data['haptics'] as bool? ?? true;
+      // Invalid cosmetic preferences must never discard earned progress.
+      final newCompanionVisible = data['companionVisible'] is bool
+          ? data['companionVisible'] as bool
+          : true;
       if (newIndex < 0 ||
           newIndex >= levels.length ||
           newLives < 0 ||
           newLives > 3 ||
           newHints < 0 ||
-          newHints > 3) {
+          newHints > 999) {
         return;
       }
       final newRemoved = (data['removed'] as List).cast<int>().toSet();
       final newCompleted = (data['completed'] as List).cast<int>().toSet();
-      final ids = levels[newIndex].arrows.map((a) => a.id).toSet();
+      final oldStory = data['storyVersion'] == null;
+      final legacyIndex = data['legacyLevelIndex'] is int
+          ? data['legacyLevelIndex'] as int
+          : newIndex;
+      final useLegacy =
+          (oldStory || data['legacyAttempt'] == true) &&
+          legacyIndex >= 0 &&
+          legacyIndex < legacyLevels.length;
+      final newPhase =
+          data['bossPhase'] == 1 &&
+              levels[newIndex].secondPhase != null &&
+              !useLegacy
+          ? 1
+          : 0;
+      final newPuzzle = useLegacy
+          ? legacyLevels[legacyIndex]
+          : newPhase == 1
+          ? levels[newIndex].secondPhase!
+          : levels[newIndex];
+      final ids = newPuzzle.arrows.map((a) => a.id).toSet();
+      final newRewards = RunRewards.decode(
+        data['rewards'],
+        levels.length,
+        now: _now,
+      );
+      final newInventory = ShopInventory.decode(data['shop']);
+      if (data['rewards'] == null && newRemoved.isNotEmpty) {
+        newRewards.eligible = false;
+      }
       if (!ids.containsAll(newRemoved) ||
           newCompleted.any((i) => i < 0 || i >= levels.length)) {
         return;
       }
       index = newIndex;
-      lives = newLives;
+      bossPhase = newPhase;
+      _legacyPuzzle = useLegacy ? newPuzzle : null;
+      _legacyLevelIndex = useLegacy ? legacyIndex : null;
+      checkpointSkill =
+          (data['checkpointSkill'] is int ? data['checkpointSkill'] as int : 0)
+              .clamp(0, 20);
+      seenScenes.clear();
+      if (data['seenScenes'] is List) {
+        seenScenes.addAll((data['seenScenes'] as List).whereType<String>());
+      }
+      // Older saves may have three hearts on a now harder level. Cap them,
+      // but never refill spent hearts or revive an already lost attempt.
+      lives = newLives.clamp(0, maxLives);
       hints = newHints;
       removed = newRemoved;
       completed = newCompleted;
+      rewards = newRewards;
+      inventory = newInventory;
+      clearsTowardHint = data['clearsTowardHint'] == 1 ? 1 : 0;
+      lastHintEarned = data['lastHintEarned'] == true;
+      pendingScenes.clear();
+      if (data['pendingScenes'] is List) {
+        pendingScenes.addAll(
+          (data['pendingScenes'] as List).whereType<String>().toSet().where(
+            (id) =>
+                allStoryScenes.any(
+                  (s) => s.id == id && inventory.companions.contains(s.chapter),
+                ) &&
+                storyAvailable(id, completed, index, bossPhase),
+          ),
+        );
+      }
+      // Preserve genuine wins from the old unrestricted test build, but an old
+      // selected/skipped level must not bypass the new completion requirements.
+      if (removed.length == puzzle.arrows.length &&
+          (useLegacy || levels[index].secondPhase == null || bossPhase == 1)) {
+        completed.add(index);
+      }
+      // Grandfather already-reached chapters, not unearned future chapters.
+      if (oldStory) {
+        for (var id = 1; id < 4; id++) {
+          if (frontier >= id * chapterLength) inventory.companions.add(id);
+        }
+      }
+      if (completed.contains(chapterLength - 1)) {
+        inventory.arrows.add('lantern');
+      }
+      if (!isUnlocked(index)) {
+        index = frontier;
+        while (index > 0 && !isUnlocked(index)) {
+          index--;
+        }
+        bossPhase = checkpointSkill = 0;
+        _legacyPuzzle = null;
+        _legacyLevelIndex = null;
+        removed = {};
+        lives = maxLives;
+        rewards.reset();
+        pendingScenes.clear();
+      }
       haptics = newHaptics;
+      final savedCompanion = data['companionId'];
+      companionId =
+          savedCompanion is int && inventory.companions.contains(savedCompanion)
+          ? savedCompanion
+          : companionForLevel(index);
+      companionVisible = newCompanionVisible;
       movingId = null;
       epoch++;
       notifyListeners();

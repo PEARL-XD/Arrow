@@ -2,9 +2,11 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'puzzle.dart';
 
-const boardPadding = 1.5;
+// Keep the full silhouette visible, but avoid a wide empty gutter around it.
+const boardPadding = .9;
 Offset cellPoint(Cell c) => Offset(c.x + boardPadding, c.y + boardPadding);
-Size boardSize(Puzzle p) => Size(p.width + 2, p.height + 2);
+Size boardSize(Puzzle p) =>
+    Size(p.width - 1 + 2 * boardPadding, p.height - 1 + 2 * boardPadding);
 Offset pointAt(ArrowRoute arrow, double position) {
   final last = arrow.cells.length - 1;
   if (position >= last) {
