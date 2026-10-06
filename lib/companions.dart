@@ -345,7 +345,7 @@ Future<int?> showCompanionPicker(
             ),
             const SizedBox(height: 8),
             const Text(
-              'A little encouragement, never in the way.\nExpressions and text only. No voice or sound.',
+              'A little encouragement, never in the way.\nExpressions and text only—no spoken dialogue.',
             ),
             const SizedBox(height: 16),
             for (var i = 0; i < companionNames.length; i++)

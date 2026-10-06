@@ -40,7 +40,11 @@ class _CoinShopState extends State<CoinShop> {
     super.dispose();
   }
 
-  Future<void> purchase(String name, int price, bool Function() buy) async {
+  Future<void> purchase(
+    String name,
+    int price,
+    Future<bool> Function() buy,
+  ) async {
     if (confirming) return;
     confirming = true;
     final confirmed = await showDialog<bool>(
@@ -48,7 +52,7 @@ class _CoinShopState extends State<CoinShop> {
       builder: (context) => AlertDialog(
         title: Text('Buy $name?'),
         content: Text(
-          'Spend $price coins?\nYour balance: ${game.rewards.coins} coins.\n\n${nextChapterReminder(price)}No real money is used.',
+          'Spend $price coins?\nYour balance: ${game.coins} coins.\n\n${nextChapterReminder(price)}This spends in-game coins; no new payment is charged.',
         ),
         actions: [
           TextButton(
@@ -62,9 +66,13 @@ class _CoinShopState extends State<CoinShop> {
         ],
       ),
     );
+    if (!mounted || confirmed != true) {
+      confirming = false;
+      return;
+    }
+    final success = await buy();
     confirming = false;
-    if (!mounted || confirmed != true) return;
-    final success = buy();
+    if (!mounted) return;
     setState(
       () => message = success
           ? '$name purchased!${name == '1 hint'
@@ -72,7 +80,8 @@ class _CoinShopState extends State<CoinShop> {
                 : companionNames.contains(name)
                 ? ' She will join you in her chapter.'
                 : ' Tap Use to equip.'}'
-          : 'Purchase not made. Check your balance or ownership.',
+          : game.walletError ??
+                'Purchase not made. Check your balance or ownership.',
     );
   }
 
@@ -80,7 +89,7 @@ class _CoinShopState extends State<CoinShop> {
     String id,
     String name,
     int price,
-    bool Function() buy, {
+    Future<bool> Function() buy, {
     bool available = true,
   }) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -89,11 +98,11 @@ class _CoinShopState extends State<CoinShop> {
         key: Key('buy-$id'),
         onPressed: available
             ? () {
-                if (game.rewards.coins < price) {
+                if (game.coins < price) {
                   setState(() {
                     tab = 4;
                     message =
-                        '${price - game.rewards.coins} more coins needed for $name.';
+                        '${price - game.coins} more coins needed for $name.';
                   });
                   if (scroll.hasClients) scroll.jumpTo(0);
                 } else {
@@ -104,9 +113,9 @@ class _CoinShopState extends State<CoinShop> {
         icon: const Icon(Icons.toll_rounded, size: 18),
         label: Text('$price coins'),
       ),
-      if (available && game.rewards.coins < price)
+      if (available && game.coins < price)
         Text(
-          '${price - game.rewards.coins} more coins needed',
+          '${price - game.coins} more coins needed',
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 11),
         ),
@@ -116,7 +125,7 @@ class _CoinShopState extends State<CoinShop> {
   String nextChapterReminder(int price) {
     for (var id = 1; id < companionPrices.length; id++) {
       if (!game.inventory.companions.contains(id)) {
-        return 'Next companion story: ${companionPrices[id]} coins. After this purchase: ${game.rewards.coins - price}.\n\n';
+        return 'Next companion story: ${companionPrices[id]} coins. After this purchase: ${game.coins - price}.\n\n';
       }
     }
     return '';
@@ -174,7 +183,7 @@ class _CoinShopState extends State<CoinShop> {
                   const SizedBox(width: 7),
                   Expanded(
                     child: Text(
-                      '${game.rewards.coins} coins',
+                      '${game.coins} coins',
                       key: const Key('shop-balance'),
                       style: const TextStyle(
                         fontSize: 19,
@@ -269,7 +278,7 @@ class _CoinShopState extends State<CoinShop> {
                               'hint',
                               '1 hint',
                               80,
-                              game.buyHint,
+                              () => game.spendCoins('hint'),
                               available: game.hints < 999,
                             ),
                             OutlinedButton.icon(
@@ -359,7 +368,7 @@ class _CoinShopState extends State<CoinShop> {
                     ],
                     if (tab == 4) card(CoinOptions(game: game)),
                     const Text(
-                      'Purchases and coins are saved on this device. Real payments are not connected.',
+                      'Game progress and earned coins are saved on this device. Purchased coins use your online wallet.',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 11),
                     ),
@@ -418,7 +427,7 @@ class _CoinShopState extends State<CoinShop> {
               'arrow-${skin.id}',
               '${skin.name} arrows',
               skin.price,
-              () => game.buyArrowSkin(skin.id),
+              () => game.spendCoins('arrow:${skin.id}'),
             ),
         ],
       ),
@@ -482,7 +491,7 @@ class _CoinShopState extends State<CoinShop> {
               'companion-$id',
               companionNames[id],
               companionPrices[id],
-              () => game.buyCompanion(id),
+              () => game.spendCoins('companion:$id'),
               available: game.companionAvailable(id),
             ),
           if (!owned && !game.companionAvailable(id))
@@ -540,7 +549,7 @@ class _CoinShopState extends State<CoinShop> {
               'theme-${theme.id}',
               theme.name,
               theme.price,
-              () => game.buyTheme(theme.id),
+              () => game.spendCoins('theme:${theme.id}'),
             ),
         ],
       ),

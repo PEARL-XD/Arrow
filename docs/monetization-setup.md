@@ -86,13 +86,13 @@ Display name is now ARROW: THE LAST LANTERN. Internal Dart package and persisten
 - Verify reward behavior, offline handling, background/resume and consent on Android and iPhone.
 - Only when ready for production, build a separate production workflow with `--dart-define=ARROW_TEST_ADS=false`. This activates the six production units above. Keep the testing workflow TRUE. TestFlight does not automatically identify ads as test traffic.
 - Never click your own live ads or encourage artificial viewing/clicks to generate revenue.
-- Consider server-side reward verification and a server-backed wallet before scaling or selling currency. This version still stores coins locally and is not tamper-proof.
+- Purchased coins now use a separate backend when configured. Earned/ad coins remain local and are not tamper-proof; server-side ad reward verification is still a future hardening step.
 
-## Coin purchases are separate and still unavailable in normal builds
+## Coin purchases are separate — implemented, configuration still required
 
-AdMob does not process purchases. The ₹49 / 1,500 coins and ₹99 / 4,000 coins packs are still admin-only simulations, clearly labelled as no-charge. They are disabled in normal and TestFlight builds. No billing SDK, receipt validation or real charge was added.
+AdMob does not process purchases. Native billing, receipt verification and a purchased-coin wallet now exist. Normal/TestFlight checkout stays disabled by default until you configure the backend URL, enable purchases, and set up both store products. Admin builds retain clearly marked no-charge simulations. No live payment has been made or tested.
 
-To implement them later: create consumable store products `coins_1500` and `coins_4000` in both stores, confirm supported Indian price points, integrate official Flutter `in_app_purchase`, display the store-provided localized price, verify purchases on a backend, credit each transaction once and complete/acknowledge it. Test using each store's sandbox.
+Follow [the coin-purchase guide](coin-purchases.md) and `C:\CODE\Arrow backend\SETUP.md`. Create consumables `coins_1500` and `coins_4000` in both stores and confirm supported India price points. The UI now uses store-provided prices; receipts are verified on the backend, credited once, then completed/consumed. Test using each store's sandbox before launching.
 
 ## Official references
 

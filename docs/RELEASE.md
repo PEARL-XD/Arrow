@@ -1,6 +1,6 @@
 # Test first, then publish
 
-This is a native Flutter app, not a WebView. The same Dart game and assets target Android and iOS. Gameplay works offline; optional rewarded ads need a connection. Google Mobile Ads is integrated with TEST ADS ON by default in all build modes. Real-money coin purchases remain unconnected. See [AdMob setup](monetization-setup.md) before testing or publishing; the SDK changes the privacy disclosures needed for release.
+This is a native Flutter app, not a WebView. The same Dart game and assets target Android and iOS. Gameplay works offline; optional rewarded ads need a connection. Google Mobile Ads is integrated with TEST ADS ON by default in all build modes. Native coin purchases and a server wallet are implemented but require store products, credentials and hosting; checkout defaults OFF. See [coin purchases](coin-purchases.md) and [AdMob setup](monetization-setup.md) before testing or publishing; these services change the privacy disclosures needed for release.
 
 ## Android testing on this Windows computer
 

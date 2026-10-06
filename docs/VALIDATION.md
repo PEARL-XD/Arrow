@@ -1,5 +1,73 @@
 # Validation record
 
+## 1.0.0+1 — 2026-10-06 SFX-only version and project cleanup
+
+- Removed companion speech playback, its saved preference/menu item, voice
+  service and bundled speech assets. Portraits, expressions, text dialogue,
+  stories and all ten game sound effects are retained. Legacy saves containing
+  the old voice preference restore normally; no player progress is reset.
+- All 212 remaining/new unit/widget tests pass. Coverage includes actual SFX
+  taps, pause/resume, hint and victory cues, muting, companion UI, save
+  compatibility, stories, bosses, purchases and progression. The seven retired
+  speech tests are archived with the deferred speech implementation.
+- Full-project static analysis is clean. A fresh Android debug compilation
+  succeeds with admin mode off and test ads on. Package inspection confirms
+  exactly ten sound-effect WAVs and zero companion-audio entries.
+- No device install, distribution, iOS compilation or store upload. The user
+  can test through their usual emulator/device and Codemagic workflows.
+- Old prototypes, promotional exports/tools, voice models/dependencies,
+  recordings/auditions and obsolete update notes were moved to the recoverable
+  `C:\CODE\Arrow archive\2026-10-06-sfx-only` folder outside the Flutter project.
+  Current release/payment instructions and level-authoring tools remain.
+  Approved expressive samples are preserved for a future version; the separate
+  backend and payment/ad settings were not changed.
+
+The records below are historical checks, not the current SFX-only feature set.
+
+## 1.0.0+1 — 2026-10-06 companion voices
+
+- Added 56 locally generated English speech clips: fourteen each for Mira,
+  Elyra, Lumi and Raven, with separate synthetic voice profiles. Only recorded
+  clips ship in the game; no speech model, paid service or network is required.
+- All 217 unit/widget tests pass. Voice tests cover asset integrity, cooldowns,
+  matching speech bubbles, boss and chapter story reveals, saved preferences,
+  interruption, delayed startup, disposal and narrow-phone menu layout.
+- Static analysis of `lib` and `test` is clean. Android debug compilation
+  succeeds; the compiled package contains all 56 WAV clips and their manifest.
+- Voices have a saved toggle independent of effects and haptics. Ordinary moves
+  and idle chatter stay silent. Incidental lines have a twelve-second cooldown;
+  voices stop on mute, hiding/switching companions, menus and backgrounding.
+- No device install or distribution. Real speaker playback and iOS native
+  compilation still require the user's phone / Codemagic checks. Automated
+  widget playback is injected rather than played through native speakers.
+
+## 1.0.0+1 — 2026-10-06 game sound effects
+
+- Added ten original, sample-free PCM cues for escapes, good/nice/great moves,
+  blocked taps, pause/resume, hints, wins/checkpoints and loss. All assets are
+  bundled and validated for format, duration and conservative peak levels.
+- All 210 unit/widget tests pass. New tests exercise actual arrow taps, ignored
+  taps during flight, hints, pause/resume, victory, muting and persisted settings;
+  service tests cover startup, interruption failures, background and disposal.
+- Static analysis of `lib` and `test` is clean. Full-repository analysis still
+  reports four existing style hints in the separate promotional-video renderer.
+- Android debug native compilation succeeds with audioplayers 6.8.1. No device
+  install or distribution. Native speaker playback and iOS compilation remain
+  to be checked on the user's phone / Codemagic build; widget audio is injected.
+- Sound effects default on, have a saved toggle independent of haptics, and
+  stop on mute/background. iOS is configured to respect the silent switch.
+  Low-latency Android players disable unnecessary frame-position polling.
+
+## 1.0.0+1 — 2026-10-06 native coin purchases and wallet backend
+
+- Flutter static analysis is clean; all 205 unit/widget tests pass. Native purchase callbacks are mocked: these results do not verify live Apple or Google checkout.
+- Latest Android debug native compilation succeeds with admin testing disabled and test ads enabled. Build was not installed or distributed.
+- Backend: all 17 tests pass; npm production dependency audit reports zero known vulnerabilities. Covers verification rules, receipt/account isolation, duplicate credit and debit, encrypted verification proofs, environment separation, delivery recovery and refund debt.
+- Verified delayed paid revives cannot affect a different attempt after restarting, including when the new attempt has already been lost.
+- Inspected the actual Flutter-rendered small-phone coin shop, including localized store prices, unavailable products and wallet controls. Updated the old placeholder payment footer.
+- Checkout is disabled by default; AdMob remains in test mode. No cloud deployment, store product creation, real payment, device install or store upload occurred. iOS native compilation and both platforms' end-to-end sandbox purchases remain required.
+- Source version stays 1.0.0+1 at the user's request; the older headings below record historical test builds. See `coin-purchases.md` and the backend's `SETUP.md` for the remaining release checks.
+
 ## 1.1.1+13 — 2026-10-05 AdMob integration
 
 - Flutter 3.44.4 / Dart 3.12.2, google_mobile_ads 9.1.0.

@@ -8,7 +8,10 @@ Debug launches currently enable local testing mode. Hot restart the app (not jus
 - Lanternlight is still a boss reward, not a purchase: select Mira's boss and complete both phases to test earning it.
 - Testing uses `path_out_admin_testing_v2`, separate from `path_out_progress_v1`. This new test save starts fresh to test companion locks; previous test and player saves remain stored under their old keys. Subsequent test activity never changes the player save. Normal controllers also reject admin snapshots.
 
-Rewarded-ad and coin-pack demos are available in admin mode only. They are labelled simulations, and never show real ads or charge money. See [live integration steps](monetization-setup.md).
+Rewarded ads use the same native SDK flow in admin and normal mode; test ads are
+on by default and earn no revenue. Admin coin packs are labelled simulations
+and never charge money. Normal-mode purchases require the store/backend setup
+and default to disabled. See [integration steps](monetization-setup.md).
 
 To return to normal player mode, run:
 

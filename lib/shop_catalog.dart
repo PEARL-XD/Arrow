@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'arrow_skins.dart';
 
-/// Prices are virtual coins earned by playing, never real money.
+/// Prices are virtual coins, earned by playing or purchased through a store.
 const companionPrices = [0, 600, 700, 800];
 
 class PuzzleTheme {

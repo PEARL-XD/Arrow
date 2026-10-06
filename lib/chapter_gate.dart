@@ -23,7 +23,7 @@ Future<int?> showChapterGate(
         builder: (context, _) {
           final owned = game.inventory.companions.contains(id);
           final price = companionPrices[id];
-          final short = (price - game.rewards.coins).clamp(0, price);
+          final short = (price - game.coins).clamp(0, price);
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -55,7 +55,7 @@ Future<int?> showChapterGate(
               ),
               const SizedBox(height: 16),
               Text(
-                'Your balance: ${game.rewards.coins} coins',
+                'Your balance: ${game.coins} coins',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               if (!owned)
@@ -66,9 +66,21 @@ Future<int?> showChapterGate(
               FilledButton.icon(
                 key: const Key('unlock-chapter'),
                 onPressed: owned || short == 0
-                    ? () {
-                        if (owned || game.buyCompanion(id)) {
+                    ? () async {
+                        final success =
+                            owned || await game.spendCoins('companion:$id');
+                        if (!context.mounted) return;
+                        if (success) {
                           Navigator.pop(context, id * chapterLength);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                game.walletError ??
+                                    'Could not unlock. Please try again.',
+                              ),
+                            ),
+                          );
                         }
                       }
                     : null,

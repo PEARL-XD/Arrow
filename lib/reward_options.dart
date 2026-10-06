@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'game_controller.dart';
 import 'rewarded_ads.dart';
+import 'coin_purchases.dart';
+import 'wallet_api.dart';
+export 'coin_purchases.dart' show coinPacks;
 export 'rewarded_ads.dart';
-
-const coinPacks = [
-  (id: 'coins_1500', amount: 1500, price: '₹49'),
-  (id: 'coins_4000', amount: 4000, price: '₹99'),
-];
 
 bool _rewardBusy = false;
 
@@ -186,6 +184,24 @@ class CoinOptions extends StatefulWidget {
 }
 
 class _CoinOptionsState extends State<CoinOptions> {
+  CoinPurchases? get purchases =>
+      coinPurchases?.game == widget.game ? coinPurchases : null;
+  @override
+  void initState() {
+    super.initState();
+    purchases?.addListener(updated);
+  }
+
+  void updated() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    purchases?.removeListener(updated);
+    super.dispose();
+  }
+
   bool busy = false;
   String? message;
   Future<void> earn() async {
@@ -235,6 +251,66 @@ class _CoinOptionsState extends State<CoinOptions> {
     });
   }
 
+  Future<void> walletRecovery() async {
+    final service = purchases;
+    if (service == null) return;
+    final input = TextEditingController();
+    final key = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Wallet recovery'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Save this key privately before buying coins. Anyone with it can access your purchased-coin wallet. It does not back up level progress or earned coins.',
+              ),
+              const SizedBox(height: 12),
+              if (service.api.token != null)
+                SelectableText(
+                  service.api.token!,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: input,
+                obscureText: true,
+                enableSuggestions: false,
+                autocorrect: false,
+                decoration: const InputDecoration(
+                  labelText: 'Restore an existing wallet key',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, input.text),
+            child: const Text('Restore wallet'),
+          ),
+        ],
+      ),
+    );
+    // Let the dialog finish its closing animation before releasing its controller.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    input.dispose();
+    if (key == null || !mounted) return;
+    try {
+      await service.recover(key);
+      message = 'Purchased wallet restored.';
+    } catch (_) {
+      message = 'Wallet could not be restored. Check the key and connection.';
+    }
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -256,16 +332,64 @@ class _CoinOptionsState extends State<CoinOptions> {
           padding: const EdgeInsets.only(bottom: 8),
           child: FilledButton.tonalIcon(
             key: Key('coin-pack-${pack.amount}'),
-            onPressed: !busy && widget.game.adminTesting
+            onPressed: busy
+                ? null
+                : widget.game.adminTesting
                 ? () => purchase(pack.amount, pack.price)
+                : purchases?.ready == true &&
+                      purchases?.purchasing == false &&
+                      purchases?.products.containsKey(pack.id) == true
+                ? () => purchases!.buy(pack.id)
                 : null,
             icon: const Icon(Icons.toll_rounded),
-            label: Text('${pack.amount} coins · ${pack.price}'),
+            label: Text(
+              '${pack.amount} coins · ${widget.game.adminTesting ? pack.price : purchases?.products[pack.id]?.price ?? 'Unavailable'}',
+            ),
           ),
         ),
       if (message != null) Text(message!, textAlign: TextAlign.center),
+      if (!widget.game.adminTesting) ...[
+        Text(
+          purchases?.message ?? 'Coin purchases are not configured yet.',
+          textAlign: TextAlign.center,
+        ),
+        if (purchases?.loading == true || purchases?.purchasing == true)
+          const LinearProgressIndicator(),
+        if (purchases?.enabled == true && purchases?.api.configured == true)
+          TextButton(
+            onPressed: purchases?.loading == true ? null : purchases?.retry,
+            child: const Text('Retry / sync'),
+          ),
+        if (purchases?.enabled == true && purchases?.api.configured == true)
+          TextButton(
+            onPressed: purchases!.purchasing || purchases!.loading
+                ? null
+                : walletRecovery,
+            child: const Text('Wallet recovery'),
+          ),
+        if (purchases?.api.accountId != null) ...[
+          if (purchases!.debt > 0)
+            Text(
+              'A refunded purchase left ${purchases!.debt} coins already used. Future coin purchases settle this amount first.',
+              textAlign: TextAlign.center,
+            ),
+          Text(
+            'Earned: ${widget.game.rewards.coins} · Purchased: ${purchases!.balance}',
+            textAlign: TextAlign.center,
+          ),
+          const Text(
+            'Purchased coins require an internet connection to spend. Save your recovery key before reinstalling.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11),
+          ),
+        ],
+      ],
       Text(
-        '$adModeCaption. ${widget.game.adminTesting ? 'Coin packs are simulations and never charge money.' : 'Coin purchases are not available yet. Replays also earn coins.'}',
+        '$adModeCaption. ${widget.game.adminTesting
+            ? 'Coin packs are simulations and never charge money.'
+            : storeEnvironment == 'sandbox'
+            ? 'Test setup: use a store test account. Check the store payment sheet before confirming. Replays also earn coins.'
+            : 'Prices and payment confirmation come from your app store. Replays also earn coins.'}',
         textAlign: TextAlign.center,
         style: const TextStyle(fontSize: 11),
       ),

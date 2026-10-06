@@ -6,6 +6,11 @@ import 'game_screen.dart';
 import 'puzzle.dart';
 import 'storage.dart';
 import 'admin_testing.dart';
+import 'coin_purchases.dart';
+import 'wallet_api.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:async';
+import 'game_audio.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,18 +40,30 @@ Future<void> main() async {
       game.addListener(() {
         progress.save(game);
       });
+      game.persistWallet = () async {
+        await progress.save(game);
+        return !progress.saveFailed.value;
+      };
     } catch (_) {
       /* Gameplay stays available if device storage is unavailable. */
     }
     game.refillTestCoins();
+    coinPurchases = CoinPurchases(
+      game: game,
+      api: WalletApi(baseUrl: walletUrl),
+      gateway: NativePurchaseGateway(defaultTargetPlatform),
+      platform: defaultTargetPlatform,
+    );
     runApp(
       PathOutApp(
         game: game,
         store: store,
         storageUnavailable: store == null,
         initializeAds: true,
+        initializeAudio: true,
       ),
     );
+    unawaited(coinPurchases!.start());
   } catch (_) {
     runApp(
       const MaterialApp(
@@ -72,11 +89,15 @@ class PathOutApp extends StatelessWidget {
     this.store,
     this.storageUnavailable = false,
     this.initializeAds = false,
+    this.initializeAudio = false,
+    this.audio,
   });
   final GameController game;
   final ProgressStore? store;
   final bool storageUnavailable;
   final bool initializeAds;
+  final bool initializeAudio;
+  final GameAudio? audio;
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'ARROW: THE LAST LANTERN',
@@ -123,6 +144,8 @@ class PathOutApp extends StatelessWidget {
       store: store,
       storageUnavailable: storageUnavailable,
       initializeAds: initializeAds,
+      initializeAudio: initializeAudio,
+      audio: audio,
     ),
   );
 }

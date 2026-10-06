@@ -233,17 +233,23 @@ class _LevelResultState extends State<LevelResult>
               if (!won) ...[
                 const SizedBox(height: 12),
                 Text(
-                  '${game.rewards.coins} coins · revive keeps your cleared arrows',
+                  '${game.coins} coins · revive keeps your cleared arrows',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 FilledButton.icon(
                   key: const Key('revive-coins'),
-                  onPressed: game.rewards.coins >= GameController.revivePrice
+                  onPressed:
+                      game.coins >= GameController.revivePrice ||
+                          game.reviveCredits > 0
                       ? widget.onReviveCoins
                       : null,
                   icon: const Icon(Icons.health_and_safety_rounded),
-                  label: const Text('Revive · 200 coins'),
+                  label: Text(
+                    game.reviveCredits > 0
+                        ? 'Use saved revive'
+                        : 'Revive · 200 coins',
+                  ),
                 ),
                 OutlinedButton.icon(
                   key: const Key('revive-ad'),
@@ -252,7 +258,8 @@ class _LevelResultState extends State<LevelResult>
                   label: const Text('Watch an ad · revive'),
                 ),
                 Text(adModeCaption, style: TextStyle(fontSize: 10)),
-                if (game.rewards.coins < GameController.revivePrice)
+                if (game.coins < GameController.revivePrice &&
+                    game.reviveCredits == 0)
                   TextButton(
                     onPressed: widget.onGetCoins,
                     child: const Text('Get more coins'),

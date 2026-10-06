@@ -6,6 +6,8 @@ import 'arrow_skins.dart';
 import 'campaign.dart';
 import 'admin_testing.dart';
 import 'story.dart';
+import 'paid_wallet.dart';
+import 'package:uuid/uuid.dart';
 
 enum GameStatus { playing, won, lost }
 
@@ -30,6 +32,187 @@ class GameController extends ChangeNotifier {
 
   final int Function()? _now;
   RunRewards rewards;
+  PaidWallet? paidWallet;
+  Future<bool> Function()? persistWallet;
+  bool walletBusy = false;
+  String? walletError;
+  int get coins => rewards.coins + (paidWallet?.balance ?? 0);
+  final Set<String> walletDeliveries = {};
+  Map<String, dynamic>? pendingWalletSpend;
+  int reviveCredits = 0;
+  void walletChanged() => notifyListeners();
+
+  int? coinPrice(String sku) {
+    if (sku == 'hint') return 80;
+    if (sku == 'revive') return revivePrice;
+    final parts = sku.split(':');
+    if (parts.length != 2) return null;
+    if (parts[0] == 'companion') {
+      final id = int.tryParse(parts[1]);
+      return id != null && id > 0 && id < 4 ? companionPrices[id] : null;
+    }
+    if (parts[0] == 'theme') {
+      return puzzleThemes
+          .where((x) => x.id == parts[1] && x.price > 0)
+          .firstOrNull
+          ?.price;
+    }
+    if (parts[0] == 'arrow') {
+      return arrowSkins
+          .where((x) => x.id == parts[1] && x.price > 0)
+          .firstOrNull
+          ?.price;
+    }
+    return null;
+  }
+
+  bool _canBuySku(String sku) {
+    if (sku == 'hint') return hints < 999;
+    if (sku == 'revive') return status == GameStatus.lost;
+    final p = sku.split(':');
+    if (p.length != 2 || coinPrice(sku) == null) return false;
+    if (p[0] == 'companion') {
+      final id = int.parse(p[1]);
+      return companionAvailable(id) && !inventory.companions.contains(id);
+    }
+    return p[0] == 'theme'
+        ? !inventory.themes.contains(p[1])
+        : !inventory.arrows.contains(p[1]);
+  }
+
+  bool _buyEarned(String sku) {
+    if (sku == 'hint') return buyHint();
+    if (sku == 'revive') return revive();
+    final p = sku.split(':');
+    return switch (p[0]) {
+      'companion' => buyCompanion(int.parse(p[1])),
+      'theme' => buyTheme(p[1]),
+      'arrow' => buyArrowSkin(p[1]),
+      _ => false,
+    };
+  }
+
+  /// Reserve the offline contribution durably before contacting the server.
+  /// A retry always uses the same request ID, including after an app restart.
+  Future<bool> spendCoins(String sku) async {
+    if (walletBusy) return false;
+    walletError = null;
+    if (sku == 'revive' && reviveCredits > 0 && status == GameStatus.lost) {
+      reviveCredits--;
+      return revive(rewarded: true);
+    }
+    if (pendingWalletSpend != null) {
+      walletError =
+          'A previous wallet purchase needs syncing. Open Coins and tap Retry / sync.';
+      notifyListeners();
+      return false;
+    }
+    if (!_canBuySku(sku)) return false;
+    final price = coinPrice(sku)!;
+    if (rewards.coins >= price) return _buyEarned(sku);
+    if (paidWallet == null || persistWallet == null || coins < price) {
+      return false;
+    }
+    walletBusy = true;
+    final attempt = epoch;
+    notifyListeners();
+    final contribution = rewards.coins;
+    final id = const Uuid().v4();
+    pendingWalletSpend = {
+      'id': id,
+      'sku': sku,
+      'amount': price - contribution,
+      'earned': contribution,
+    };
+    rewards.coins -= contribution;
+    try {
+      if (!await persistWallet!()) {
+        rewards.coins += contribution;
+        pendingWalletSpend = null;
+        walletError =
+            'Device storage is unavailable. Nothing was sent to the wallet.';
+        return false;
+      }
+      await retryWalletSpend();
+      final delivered = walletDeliveries.contains(id);
+      if (delivered &&
+          sku == 'revive' &&
+          epoch == attempt &&
+          status == GameStatus.lost &&
+          reviveCredits > 0) {
+        reviveCredits--;
+        revive(rewarded: true);
+        await persistWallet!();
+      }
+      return delivered;
+    } catch (_) {
+      walletError =
+          'Purchase saved for retry. Open Coins and sync when you are online.';
+      return false;
+    } finally {
+      walletBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> retryWalletSpend() async {
+    final pending = pendingWalletSpend;
+    if (pending == null || paidWallet == null) return;
+    final response = await paidWallet!.spend(pending);
+    await applyWallet(response);
+  }
+
+  /// Acknowledge only after entitlements and delivery IDs are saved together.
+  Future<void> applyWallet(Map<String, dynamic> data) async {
+    for (final sku
+        in (data['entitlements'] as List? ?? []).whereType<String>()) {
+      _applyPermanent(sku);
+    }
+    final ack = <String>[];
+    for (final raw in data['deliveries'] as List? ?? []) {
+      final delivery = Map<String, dynamic>.from(raw as Map);
+      final id = delivery['id'] as String;
+      final sku = delivery['sku'] as String;
+      if (!walletDeliveries.contains(id)) {
+        if (sku == 'hint') {
+          if (hints >= 999) {
+            continue; // Keep it undelivered until room is available.
+          }
+          hints++;
+        } else if (sku == 'revive') {
+          reviveCredits++;
+        } else {
+          _applyPermanent(sku);
+        }
+        walletDeliveries.add(id);
+      }
+      if (pendingWalletSpend?['id'] == id) pendingWalletSpend = null;
+      ack.add(id);
+    }
+    notifyListeners();
+    if (persistWallet != null && await persistWallet!()) {
+      for (final id in ack) {
+        await paidWallet?.acknowledge(id);
+      }
+    } else if (ack.isNotEmpty) {
+      throw StateError('Wallet delivery could not be saved');
+    }
+  }
+
+  void _applyPermanent(String sku) {
+    if (coinPrice(sku) == null) return;
+    final p = sku.split(':');
+    if (p.length != 2) return;
+    switch (p[0]) {
+      case 'companion':
+        inventory.companions.add(int.parse(p[1]));
+      case 'theme':
+        inventory.themes.add(p[1]);
+      case 'arrow':
+        inventory.arrows.add(p[1]);
+    }
+  }
+
   ShopInventory inventory = ShopInventory();
   final List<Puzzle> levels;
   final List<Puzzle> legacyLevels;
@@ -51,6 +234,7 @@ class GameController extends ChangeNotifier {
   Set<int> removed = {}, completed = {};
   int? movingId;
   bool haptics = true;
+  bool sounds = true;
   int companionId = 0;
   bool companionVisible = true;
   GameStatus get status => removed.length == puzzle.arrows.length
@@ -271,6 +455,11 @@ class GameController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleSounds() {
+    sounds = !sounds;
+    notifyListeners();
+  }
+
   ArrowRoute? hint() {
     if (busy || status != GameStatus.playing || hints == 0) return null;
     final choices = puzzle.available(removed);
@@ -361,10 +550,14 @@ class GameController extends ChangeNotifier {
     'removed': removed.toList(),
     'completed': completed.toList(),
     'haptics': haptics,
+    'sounds': sounds,
     'companionId': companionId,
     'companionVisible': companionVisible,
     'rewards': rewards.snapshot(),
     'shop': inventory.snapshot(),
+    'walletDeliveries': walletDeliveries.toList(),
+    'pendingWalletSpend': pendingWalletSpend,
+    'reviveCredits': reviveCredits,
   };
   void restore(Map<String, dynamic> data) {
     // A mid-flight arrow stays present in the save until its animation ends.
@@ -441,6 +634,24 @@ class GameController extends ChangeNotifier {
       completed = newCompleted;
       rewards = newRewards;
       inventory = newInventory;
+      walletDeliveries.clear();
+      if (data['walletDeliveries'] is List) {
+        walletDeliveries.addAll(
+          (data['walletDeliveries'] as List).whereType<String>(),
+        );
+      }
+      final pending = data['pendingWalletSpend'];
+      pendingWalletSpend =
+          pending is Map &&
+              pending['id'] is String &&
+              pending['sku'] is String &&
+              pending['amount'] is int &&
+              pending['earned'] is int
+          ? Map<String, dynamic>.from(pending)
+          : null;
+      reviveCredits = data['reviveCredits'] is int
+          ? (data['reviveCredits'] as int).clamp(0, 100000)
+          : 0;
       clearsTowardHint = data['clearsTowardHint'] == 1 ? 1 : 0;
       lastHintEarned = data['lastHintEarned'] == true;
       pendingScenes.clear();
@@ -484,6 +695,7 @@ class GameController extends ChangeNotifier {
         pendingScenes.clear();
       }
       haptics = newHaptics;
+      sounds = data['sounds'] is bool ? data['sounds'] as bool : true;
       final savedCompanion = data['companionId'];
       companionId =
           savedCompanion is int && inventory.companions.contains(savedCompanion)

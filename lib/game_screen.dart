@@ -14,6 +14,7 @@ import 'story_screen.dart';
 import 'chapter_gate.dart';
 import 'campaign.dart';
 import 'reward_options.dart';
+import 'game_audio.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({
@@ -22,11 +23,15 @@ class GameScreen extends StatefulWidget {
     this.store,
     this.storageUnavailable = false,
     this.initializeAds = false,
+    this.initializeAudio = false,
+    this.audio,
   });
   final GameController game;
   final ProgressStore? store;
   final bool storageUnavailable;
   final bool initializeAds;
+  final bool initializeAudio;
+  final GameAudio? audio;
   @override
   State<GameScreen> createState() => _GameScreenState();
 }
@@ -37,6 +42,13 @@ class _GameScreenState extends State<GameScreen>
   final transform = TransformationController();
   final pageScroll = ScrollController();
   final reactions = CompanionReactions();
+  late final GameAudio audio =
+      widget.audio ??
+      GameAudio(
+        output: widget.initializeAudio
+            ? NativeSoundOutput()
+            : SilentSoundOutput(),
+      );
   bool resting = false, leaving = false;
   bool advancing = false;
   bool presentingStory = false;
@@ -58,6 +70,8 @@ class _GameScreenState extends State<GameScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     game.addListener(gameChanged);
+    syncAudio();
+    unawaited(audio.initialize());
     reactions.selectCharacter(game.companionId);
     if (game.removed.isEmpty &&
         game.status == GameStatus.playing &&
@@ -251,6 +265,7 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void gameChanged() {
+    syncAudio();
     if (reactions.characterId != game.companionId) {
       reactions.selectCharacter(game.companionId);
     }
@@ -260,6 +275,14 @@ class _GameScreenState extends State<GameScreen>
         if (mounted) presentPendingStories();
       });
     }
+  }
+
+  void syncAudio() {
+    audio.configure(
+      enabled: game.sounds,
+      foreground: foreground,
+      paused: resting || overlayDepth > 0,
+    );
   }
 
   void scheduleIdle({int seconds = 8}) {
@@ -289,6 +312,7 @@ class _GameScreenState extends State<GameScreen>
 
   void pauseActivity() {
     overlayDepth++;
+    syncAudio();
     idleTimer?.cancel();
     game.pauseTiming();
     widget.store?.save(game);
@@ -297,6 +321,7 @@ class _GameScreenState extends State<GameScreen>
   void resumeActivity() {
     if (overlayDepth > 0) overlayDepth--;
     if (!mounted) return;
+    syncAudio();
     if (activePuzzle) game.resumeTiming();
     scheduleIdle();
     if (!presentingStory && game.pendingScenes.isNotEmpty) {
@@ -309,6 +334,7 @@ class _GameScreenState extends State<GameScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     foreground = state == AppLifecycleState.resumed;
+    syncAudio();
     if (!foreground) {
       idleTimer?.cancel();
       game.pauseTiming();
@@ -335,6 +361,7 @@ class _GameScreenState extends State<GameScreen>
     game.pauseTiming();
     WidgetsBinding.instance.removeObserver(this);
     reactions.dispose();
+    unawaited(audio.dispose());
     motion.dispose();
     transform.dispose();
     pageScroll.dispose();
@@ -343,6 +370,7 @@ class _GameScreenState extends State<GameScreen>
 
   void load(int index) {
     if (!game.isUnlocked(index)) return;
+    unawaited(audio.stop());
     if (pageScroll.hasClients) pageScroll.jumpTo(0);
     motion.stop();
     feedbackTimer?.cancel();
@@ -355,6 +383,7 @@ class _GameScreenState extends State<GameScreen>
     quietThought = 0;
     reactions.newPuzzle();
     resting = false;
+    syncAudio();
     if (activePuzzle) game.resumeTiming();
     if (game.companionVisible) welcome();
     scheduleIdle();
@@ -382,6 +411,9 @@ class _GameScreenState extends State<GameScreen>
     highlighted = null;
     blocked = null;
     if (result == MoveResult.blocked) {
+      unawaited(
+        audio.play(game.lives == 0 ? GameSound.loss : GameSound.blocked),
+      );
       if (game.companionVisible) {
         reactions.blocked(lives: game.lives);
       }
@@ -395,6 +427,7 @@ class _GameScreenState extends State<GameScreen>
       });
       return;
     }
+    unawaited(audio.play(GameSound.glide));
     if (game.haptics) HapticFeedback.selectionClick();
     final arrow = game.puzzle.arrows.firstWhere((a) => a.id == id);
     final token = game.epoch;
@@ -411,16 +444,24 @@ class _GameScreenState extends State<GameScreen>
         .then((_) {
           if (!mounted || !game.finish(id, token)) return;
           if (game.bossPhase != phaseBefore) {
+            unawaited(audio.play(GameSound.victory));
             motion.value = 0;
             transform.value = Matrix4.identity();
             zoom = 1;
             return;
           }
+          final newlyFreed = game.puzzle
+              .available(game.removed)
+              .where((a) => !clearBefore.contains(a.id))
+              .length;
+          unawaited(
+            audio.play(
+              game.status == GameStatus.won
+                  ? GameSound.victory
+                  : GameAudio.successfulMove(newlyFreed),
+            ),
+          );
           if (game.companionVisible) {
-            final newlyFreed = game.puzzle
-                .available(game.removed)
-                .where((a) => !clearBefore.contains(a.id))
-                .length;
             reactions.moved(
               newlyFreed,
               remaining: game.remaining,
@@ -443,6 +484,7 @@ class _GameScreenState extends State<GameScreen>
     scheduleIdle();
     final arrow = game.hint();
     if (arrow == null) return;
+    unawaited(audio.play(GameSound.hint));
     if (game.companionVisible) {
       reactions.hint();
     }
@@ -494,12 +536,18 @@ class _GameScreenState extends State<GameScreen>
     try {
       final success = ad
           ? await watchReward(context, game, RewardKind.revive)
-          : game.revive();
+          : await game.spendCoins('revive');
       if (mounted && success) {
+        unawaited(audio.play(GameSound.resume, whilePaused: true));
         highlighted = blocked = null;
         setState(
           () => message = 'Hearts restored. Your cleared paths are still open.',
         );
+      }
+      if (mounted && !success && !ad && game.walletError != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(game.walletError!)));
       }
     } finally {
       resumeActivity();
@@ -540,6 +588,7 @@ class _GameScreenState extends State<GameScreen>
     if (leaving || resting) return;
     leaving = true;
     pauseActivity();
+    unawaited(audio.play(GameSound.pause, whilePaused: true));
     final goodbye = reactions.nextLine(CompanionEvent.goodbye);
     final leave = await showDialog<bool>(
       context: context,
@@ -578,13 +627,18 @@ class _GameScreenState extends State<GameScreen>
     );
     leaving = false;
     resumeActivity();
-    if (!mounted || leave != true) return;
+    if (!mounted) return;
+    if (leave != true) {
+      unawaited(audio.play(GameSound.resume));
+      return;
+    }
     motion.stop();
     game.cancelFlight();
     feedbackTimer?.cancel();
     reactions.reset();
     highlighted = blocked = null;
     setState(() => resting = true);
+    syncAudio();
     idleTimer?.cancel();
     game.pauseTiming();
     await widget.store?.save(game);
@@ -617,6 +671,8 @@ class _GameScreenState extends State<GameScreen>
               FilledButton(
                 onPressed: () => setState(() {
                   resting = false;
+                  syncAudio();
+                  unawaited(audio.play(GameSound.resume));
                   if (activePuzzle) game.resumeTiming();
                   scheduleIdle();
                   message = 'Tap an arrow with a clear way out.';
@@ -963,6 +1019,12 @@ class _GameScreenState extends State<GameScreen>
                         resumeActivity();
                         if (value == 'help') showHelp();
                         if (value == 'haptics') game.toggleHaptics();
+                        if (value == 'sounds') {
+                          game.toggleSounds();
+                          if (game.sounds) {
+                            unawaited(audio.play(GameSound.good));
+                          }
+                        }
                         if (value == 'break') leavePuzzle();
                         if (value == 'hints') hintShop();
                         if (value == 'journal') journal();
@@ -984,6 +1046,26 @@ class _GameScreenState extends State<GameScreen>
                         const PopupMenuItem(
                           value: 'ad-privacy',
                           child: Text('Ad privacy options'),
+                        ),
+                        PopupMenuItem(
+                          value: 'sounds',
+                          child: Row(
+                            children: [
+                              Icon(
+                                game.sounds
+                                    ? Icons.volume_up_rounded
+                                    : Icons.volume_off_rounded,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  game.sounds
+                                      ? 'Turn sounds off'
+                                      : 'Turn sounds on',
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         PopupMenuItem(
                           value: 'haptics',
@@ -1013,8 +1095,8 @@ class _GameScreenState extends State<GameScreen>
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             child: Text(
                               game.isBoss
-                                  ? 'Guard: ${game.remaining} · ${game.rewards.coins} coins'
-                                  : '${game.remaining} arrows · ${game.rewards.coins} coins',
+                                  ? 'Guard: ${game.remaining} · ${game.coins} coins'
+                                  : '${game.remaining} arrows · ${game.coins} coins',
                               style: const TextStyle(fontSize: 11),
                             ),
                           ),
